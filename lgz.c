@@ -167,7 +167,7 @@ void lgz_print(lgz *num)
 		{
 			printf("0");
 		}
-		printf("%x", num->num[length-i-1]);
+		printf("%X", num->num[length-i-1]);
 	}
 	printf("\n");
 }
@@ -177,7 +177,7 @@ void lgz_memset(lgz *num, uint8_t bit)
 	memset(num->num, bit, num->length);
 }
 
-int lgz_enter(lgz *num, int64_t input)
+void lgz_enter(lgz *num, int64_t input)
 {
 	if(input < 0)
 	{
@@ -195,11 +195,15 @@ int lgz_enter(lgz *num, int64_t input)
 		input = input >> 8;
 		++i;
 	}
-	return 0;
 }
 
-int64_t lgz_long(lgz *num)
+int64_t lgz_int64(lgz *num)
 {
+	if(num->length > 8)
+	{
+		return 0;
+	}
+
 	int64_t res = 0;
 	for(int i=num->length-1;i>=0;--i)
 	{
@@ -208,7 +212,7 @@ int64_t lgz_long(lgz *num)
 	return res;
 }
 
-int lgz_enter_str(lgz *num, char *str, int length)
+void lgz_enter_str(lgz *num, char *str, int length)
 {
 	if(length > num->length)
 	{
@@ -225,7 +229,7 @@ int lgz_enter_str(lgz *num, char *str, int length)
 	}
 }
 
-int lgz_enter_num(lgz *num, char *str)
+void lgz_enter_num(lgz *num, char *str)
 {
 	int length = strlen(str);
 	if(length > num->length)
@@ -432,20 +436,20 @@ void lgz_add(lgz *c, lgz *a, lgz *b)
 		if(rem < 128 && signa == 255 && signb == 255)
 		{
 			c->num[b_oper->length-1] = 255;
-			lgz_resize(c, (c->length << 1));
+			lgz_resize(c, c->length+4);
 			c->num[b_oper->length-1] = rem;
 		}
 		else if(rem >= 128 && signa == 0 && signb == 0)
 		{
 			c->num[b_oper->length-1] = 0;
-			lgz_resize(c, (c->length << 1));
+			lgz_resize(c, c->length+4);
 			c->num[b_oper->length-1] = rem;
 		}
 	}
 }
 
 void lgz_sub(lgz *c, lgz *a, lgz *b)
-{	
+{
 	int sum = 0;
 	int carry = 0;
 	int signb = 0;
@@ -476,6 +480,7 @@ void lgz_sub(lgz *c, lgz *a, lgz *b)
 		c->num[i] = sum;
 		carry = sum >> 8;
 	}
+	//need to make check here
 }
 
 void lgz_mul(lgz *c, lgz *a, lgz *b)
@@ -522,57 +527,6 @@ void lgz_mul(lgz *c, lgz *a, lgz *b)
 	}
 }
 
-void lgz_add32(lgz *c, lgz *a, int num)
-{
-	int64_t sum = 0;
-	int64_t carry = 0;
-	int signa = lgz_sign(a);
-	if(signa == 255)
-	{
-		signa = ~(0);
-	}
-
-	if(c->length < a->length)
-	{
-		lgz_resize(c, a->length+4);
-	}
-
-	uint32_t *a_32 = (uint32_t*)a->num;
-	uint32_t *c_32 = (uint32_t*)c->num;
-	
-	sum = (int64_t)a_32[0] + num + carry;
-	c_32[0] = sum;
-	carry = sum >> 32;
-
-	for(int i=1;i<(a->length/4);++i)
-	{
-		sum = (int64_t)a_32[i] + signa + carry;
-		c_32[i] = sum;
-		carry = sum >> 32;
-	}
-}
-
-void lgz_mul32(lgz *c, lgz *a, int num)
-{
-	int64_t prod = 0;
-	uint32_t carry = 0;		
-	
-	int mix = lgz_mag(a)+4;
-	if(c->length < mix)
-	{
-		lgz_resize(c,mix);
-	}
-	
-	uint32_t *a_32 = (uint32_t*)a->num;
-	uint32_t *c_32 = (uint32_t*)c->num;
-	
-	for(int i=0; i<(a->length/4); ++i)
-	{
-		prod = (int64_t)num*a_32[i];
-		c_32[i] = prod + carry;
-		carry = prod >> 32;
-	}
-}
 
 void lgz_div(lgz_div_t *c, lgz *a, lgz *b)
 {
@@ -608,7 +562,10 @@ void lgz_div(lgz_div_t *c, lgz *a, lgz *b)
 		//printf("track=%d\nyo=%x\nq=%x\n",track,yo, q);
 		if(q == 0)
 		{
-			yo = (yo << 8) + rem->num[track+b_mag-2];
+			if(track != 0)
+			{
+				yo = (yo << 8) + rem->num[track+b_mag-2];
+			}
 			--track;
 			//getchar();
 			continue;
@@ -660,7 +617,10 @@ void lgz_div(lgz_div_t *c, lgz *a, lgz *b)
 		//printf("quot=");
 		//lgz_print(quot);
 		//getchar();
-		yo = (rem->num[track+b_mag-1] << 8) + rem->num[track+b_mag-2];
+		if(track != 0)
+		{
+			yo = (rem->num[track+b_mag-1] << 8) + rem->num[track+b_mag-2];
+		}
 		--track;
 	}
 }
@@ -681,13 +641,17 @@ void lgz_mod(lgz *c, lgz *a, lgz *b)
 	int q = 0;
 	int sum = 0;
 	int carry = 0;
+
 	
 	while(track >= 0)
 	{
 		q = yo/sig;
 		if(q == 0)
 		{
-			yo = (yo << 8) + rem->num[track+b_mag-2];
+			if(track != 0)
+			{
+				yo = (yo << 8) + rem->num[track+b_mag-2];
+			}
 			--track;
 			continue;
 		}
@@ -726,11 +690,137 @@ void lgz_mod(lgz *c, lgz *a, lgz *b)
 				carry = sum >> 8;
 				++k;
 			}
-			--q;
 		}
-		yo = (rem->num[track+b_mag-1] << 8) + rem->num[track+b_mag-2];
+		if(track != 0)
+		{
+			yo = (rem->num[track+b_mag-1] << 8) + rem->num[track+b_mag-2];
+		}
 		--track;
 	}
+}
+
+void lgz_add32(lgz *c, lgz *a, int32_t num)
+{
+	int64_t sum = 0;
+	int64_t carry = 0;
+	int signa = lgz_sign(a);
+
+	if(c->length < a->length)
+	{
+		lgz_resize(c, a->length);
+	}
+
+	uint32_t *a_32 = (uint32_t*)a->num;
+	uint32_t *c_32 = (uint32_t*)c->num;
+	
+	sum = (int64_t)a_32[0] + num + carry;
+	c_32[0] = sum;
+	carry = sum >> 32;
+
+	for(int i=1;i<(a->length/4);++i)
+	{
+		sum = (int64_t)a_32[i] + signa + carry;
+		c_32[i] = sum;
+		carry = sum >> 32;
+	}
+
+	if(c->length == a->length)
+	{
+		uint8_t rem = c->num[a->length-1];
+		if(rem < 128 && signa == 255 && num < 0)
+		{
+			c->num[a->length-1] = 255;
+			lgz_resize(c, c->length+4);
+			c->num[a->length-1] = rem;
+		}
+		else if(rem >= 128 && signa == 0 && num >= 0)
+		{
+			c->num[a->length-1] = 0;
+			lgz_resize(c, c->length+4);
+			c->num[a->length-1] = rem;
+		}
+	}
+}
+
+void lgz_mul32(lgz *c, lgz *a, int32_t num)
+{
+	int64_t prod = 0;
+	uint32_t carry = 0;		
+	
+	int mix = lgz_mag(a)+4;
+	if(c->length < mix)
+	{
+		lgz_resize(c,mix);
+	}
+	
+	uint32_t *a_32 = (uint32_t*)a->num;
+	uint32_t *c_32 = (uint32_t*)c->num;
+	
+	for(int i=0; i<(a->length/4); ++i)
+	{
+		prod = (int64_t)num*a_32[i];
+		c_32[i] = prod + carry;
+		carry = prod >> 32;
+	}
+}
+
+void lgz_div32(lgz_div_t *c, lgz *a, int32_t num)
+{
+	lgz_set(c->rem, a);	
+	
+	int32_t track = (lgz_mag(c->rem)/4)-1;
+	if(4*(track+1) < lgz_mag(c->rem))
+	{
+		++track;
+	}
+	int32_t orig = track;
+
+	uint64_t prod;
+	uint32_t carry;
+
+	
+	if(c->quot->length <= 4*track)
+	{
+		lgz_resize(c->quot, 4*track+4);
+	}
+
+	uint32_t *quot = (uint32_t*)c->quot->num;
+	uint32_t *rem = (uint32_t*)c->rem->num;
+	uint64_t di = rem[track];
+	
+	while(track >= 0)
+	{
+		uint64_t q = di/num;
+		if(q == 0)
+		{
+			if(track != 0)
+			{
+				di = rem[track];
+				di <<= 32;
+				di += rem[track-1];
+			}
+			--track;
+			continue;
+		}
+		
+		prod = (uint64_t)q*num;
+		rem[track] -= prod;
+		if(track < orig)
+		{
+			carry = prod >> 32;
+			rem[track+1] -= carry;
+		}
+
+		if(track != 0)
+		{
+			di = rem[track];
+			di <<= 32;
+			di += rem[track-1];
+		}
+		quot[track] = q;
+		--track;
+	}
+	
 }
 
 uint64_t zsqrt(uint64_t num)
