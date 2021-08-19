@@ -177,35 +177,31 @@ void lgz_memset(lgz *num, uint8_t bit)
 	memset(num->num, bit, num->length);
 }
 
-void lgz_enter(lgz *num, int64_t input)
+void lgz_enter(lgz *num, uint64_t input)
 {
-	if(input < 0)
-	{
-		lgz_memset(num, 255);
-	}
-	else
+	int64_t in = input;
+	if(in >= 0)
 	{
 		lgz_memset(num, 0);
 	}
-
+	else
+	{
+		lgz_memset(num, 255);
+	}
+	
 	int i = 0;
 	while(input != 0)
 	{
 		num->num[i] = input;
 		input = input >> 8;
 		++i;
-	}
+	}	
 }
 
 int64_t lgz_int64(lgz *num)
 {
-	if(num->length > 8)
-	{
-		return 0;
-	}
-
 	int64_t res = 0;
-	for(int i=num->length-1;i>=0;--i)
+	for(int i=7;i>=0;--i)
 	{
 		res = (res << 8)+num->num[i];
 	}
@@ -252,6 +248,22 @@ void lgz_enter_num(lgz *num, char *str)
 int lgz_eqz(lgz *a)
 {
 	for(int i=0;i<a->length;++i)
+	{
+		if(a->num[i] != 0)
+		{
+			return 0;
+		}
+	}
+	return 1;
+}
+
+int lgz_eqo(lgz *a)
+{
+	if(a->num[0] != 1)
+	{
+		return 0;
+	}
+	for(int i=1; i<a->length; ++i)
 	{
 		if(a->num[i] != 0)
 		{
@@ -767,9 +779,10 @@ void lgz_mul32(lgz *c, lgz *a, int32_t num)
 void lgz_div32(lgz_div_t *c, lgz *a, int32_t num)
 {
 	lgz_set(c->rem, a);	
-	
-	int32_t track = (lgz_mag(c->rem)/4)-1;
-	if(4*(track+1) < lgz_mag(c->rem))
+
+	int32_t mag = lgz_mag(c->rem);	
+	int32_t track = (mag/4)-1;
+	if(4*(track+1) < mag)
 	{
 		++track;
 	}
@@ -818,6 +831,57 @@ void lgz_div32(lgz_div_t *c, lgz *a, int32_t num)
 			di += rem[track-1];
 		}
 		quot[track] = q;
+		--track;
+	}	
+}
+
+void lgz_mod32(lgz *c, lgz *a, int32_t num)
+{
+	lgz_set(c, a);	
+	
+	int32_t mag = lgz_mag(c);
+	int32_t track = (mag/4)-1;
+	if(4*(track+1) < mag)
+	{
+		++track;
+	}
+	int32_t orig = track;
+
+	uint64_t prod;
+	uint32_t carry;
+
+	uint32_t *rem = (uint32_t*)c->num;
+	uint64_t di = rem[track];
+	
+	while(track >= 0)
+	{
+		uint64_t q = di/num;
+		if(q == 0)
+		{
+			if(track != 0)
+			{
+				di = rem[track];
+				di <<= 32;
+				di += rem[track-1];
+			}
+			--track;
+			continue;
+		}
+		
+		prod = (uint64_t)q*num;
+		rem[track] -= prod;
+		if(track < orig)
+		{
+			carry = prod >> 32;
+			rem[track+1] -= carry;
+		}
+
+		if(track != 0)
+		{
+			di = rem[track];
+			di <<= 32;
+			di += rem[track-1];
+		}
 		--track;
 	}
 	
@@ -903,9 +967,9 @@ void lgz_sqrt(lgz *r, lgz *a)
 	int n = lgz_mag(a);
 	int m = ((n+1) >> 1)-1;	
 	
-	if(r->length < m)
+	if(r->length <= m)
 	{
-		lgz_resize(r, m);
+		lgz_resize(r, m+4);
 	}
 
 	lgz *rsq = new_lgz_size(n);
