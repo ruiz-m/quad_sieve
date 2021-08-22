@@ -11,22 +11,12 @@
 typedef struct quad
 {
 	uint32_t pr;
-	uint32_t sol1;
-	uint32_t sol2;
+	uint32_t sol[2];
 }quad;
 
 quad *quadros;
 lgz **mem;
 lgz_div_t *c;
-
-void qs_rref(int8_t *b, int8_t **A, int32_t row, int32_t col);
-uint32_t qs_powm(int64_t a, uint32_t p, uint32_t n);
-int32_t qs_legendre(lgz *a, uint32_t p);
-uint32_t qs_tonelli_shanks(uint32_t a, uint32_t p);
-void qs_get_quad(uint64_t B, lgz *num);
-float qs_ln(lgz *n);
-void qs_poly(lgz *out, int64_t x, lgz *sqrtn, lgz *n);
-void qs_factor();
 
 void add(int8_t *r1, int8_t *r2, int32_t size)
 {
@@ -64,7 +54,6 @@ void qs_rref(int8_t *b, int8_t **A, int32_t row, int32_t col)
 		}
 
 		yabo:
-		printf("shoot\n");
 		if(j < col)
 		{
 			for(int32_t k=i+1; k<row; ++k)
@@ -77,7 +66,6 @@ void qs_rref(int8_t *b, int8_t **A, int32_t row, int32_t col)
 		}
 		++i;
 		++j;
-		printf("me\n");
 	}
 
 	//get rref
@@ -272,38 +260,15 @@ void qs_polyQ(lgz *out, int64_t x, lgz *sqrtn, lgz *n)
 	}
 }
 
-int32_t qs_vec(int32_t *scr, lgz *y, int64_t x, int64_t B)
+int32_t I64log2(uint64_t x)
 {
-	memset(scr, 0, B);
-	lgz_set(mem[3], y);
-	for(int64_t i=0; i<B; ++i)
+	int32_t res = -1;
+	while(x != 0)
 	{
-		uint32_t m = x%quadros[i].pr;
-		if(x < 0)
-		{
-			m += quadros[i].pr;
-		}
-		//printf("prime=%u\nm=%u\n", quadros[i].pr, m);
-		if(m == quadros[i].sol1 || m == quadros[i].sol2)
-		{
-			do
-			{
-				++scr[i];
-				lgz_div32(c, mem[3], quadros[i].pr);
-				lgz_set(mem[3], c->quot);
-			}while(!lgz_eqz(c->rem));
-
-			//printf("quot="); lgz_print(mem[3]);
-			if(lgz_eqo(mem[3]))
-			{
-				//printf("YABO\n");
-				return 1;
-			}
-		}
-		//getchar();
+		x >>= 1;
+		++res;
 	}
-	//printf("fail\n");
-	return 0;
+	return res;
 }
 
 float qs_ln(lgz *n)
@@ -311,53 +276,47 @@ float qs_ln(lgz *n)
 	int mag = lgz_mag(n);
 	uint8_t last = n->num[mag-1];
 
-	int log2 = -1;
-	while(last != 0)
-	{
-		last >>= 1;
-		++log2;
-	}
+	int log2 = I64log2(last);
 	log2 += 8*(mag-1);
 	return (float)(log2*0.69315);
 }
 
 void qs_factor(lgz *n)
 {
-	//find B and M
+	//find B 
 	float ln_n = qs_ln(n);
 	float ex = exp(sqrt(ln_n*log(ln_n)));
-	uint64_t B = ceil(pow(ex, sqrt(2)/4.0));
+	uint32_t B = ceil(pow(ex, sqrt(2)/4.0));
 	uint64_t count = 0;
-	int32_t size = 0x100;
-	int64_t index = 0;
-
-	int32_t *scr = (int32_t*)calloc(B, sizeof(int32_t));
-	int64_t *sols = (int64_t*)malloc(B*sizeof(int64_t));
-	int8_t **A = (int8_t**)malloc(B*sizeof(int8_t*));
-	int32_t **P = (int32_t**)malloc(B*sizeof(int32_t*));
-	for(int64_t i=0; i<B; ++i)
-	{
-		A[i] = (int8_t*)calloc(B,sizeof(int8_t));
-		P[i] = (int32_t*)calloc(B,sizeof(int32_t));
-	}
-
-	lgz **set = (lgz**)malloc(size*sizeof(lgz*));
-	int8_t *init = (int8_t*)calloc(size, sizeof(int8_t));
-	for(int32_t i=0; i<size; ++i)
-	{
-		set[i] = new_lgz();
-	}
-
+	
 	lgz *sqrtn = new_lgz();
+	printf("compute square root\n");
 	lgz_sqrt(sqrtn, n);
 	printf("sqrtn=");lgz_print(sqrtn);
 
+	//uint32_t min = I64log2(I64log2(B));
+	uint32_t min = lgz_mag(sqrtn)+1;
+	uint32_t col = B+min-1;
+
+	int8_t *scr = (int8_t*)calloc(col, sizeof(int8_t));
+	int64_t *smooth_x = (int64_t*)malloc(col*sizeof(int64_t));
+	uint32_t *queue = (uint32_t*)calloc(B, sizeof(uint32_t));
+	uint32_t *qIndex = (uint32_t*)calloc(B, sizeof(uint32_t));
+	int8_t **A = (int8_t**)malloc(B*sizeof(int8_t*));
+	for(int64_t i=0; i<B; ++i)
+	{
+		A[i] = (int8_t*)calloc(col,sizeof(int8_t));
+	}
+	
 	printf("B=%llu\n", B);
+	printf("col=%u\n", col);
+	printf("min=%u\n", min);
 
 	qs_get_quad(B, n);
 	
+	getchar();
 	for(int64_t i=0; i<B; ++i)
-	{	
+	{
 		lgz_memset(mem[0], 0);
 		lgz_mod32(mem[0], n, quadros[i].pr);
 		int64_t n_modp = lgz_int64(mem[0]);
@@ -378,106 +337,95 @@ void qs_factor(lgz *n)
 		{
 			sol2 += quadros[i].pr;
 		}
-		quadros[i].sol1 = sol1;
-		quadros[i].sol2 = sol2;
+		quadros[i].sol[0] = sol1;
+		quadros[i].sol[1] = sol2;
+		//printf("%u, ", quadros[i].pr);
+	}
+	printf("\n");
+	
+	int64_t yabo = 0;
+	int64_t x[2] = {0, -1};
+	while(count < col)
+	{
+		for(int8_t j=0; j<2; ++j)
+		{
+			uint32_t factor_count = 0;
+			memset(scr, 0, col);
+			memset(queue, 0, B*sizeof(uint32_t));
+			memset(qIndex, 0, B*sizeof(uint32_t));
+			for(int32_t i=0; i<B; ++i)
+			{
+				int64_t m = x[j]%quadros[i].pr;
+				if(m < 0)
+				{
+					m += quadros[i].pr;
+				}
+				if(m == quadros[i].sol[0] || m == quadros[i].sol[1])
+				{
+					queue[factor_count] = quadros[i].pr;
+					qIndex[factor_count] = i;
+					++factor_count;
+				}
+			}
+			//printf("factor_count=%d\n", factor_count);
+			if(factor_count < min)
+			{
+				continue;
+			}
+			lgz_memset(mem[0], 0);
+			qs_polyQ(mem[0], x[j], sqrtn, n);
+			++yabo;
+			/*printf("x=%lld\n", x[j]);
+			printf("calculate\nyabo=%d\nmem0=", yabo); lgz_print(mem[0]);*/
+			for(int32_t i=0; i<factor_count; ++i)
+			{
+				//printf("%d, ", queue[i]);
+				uint32_t qInd = qIndex[i];
+				while(!lgz_eqo(mem[0]))
+				{
+					lgz_memset(c->quot, 0);
+					lgz_div32(c, mem[0], queue[i]);
+					if(!lgz_eqz(c->rem))
+					{
+						break;
+					}
+					lgz_set(mem[0], c->quot);
+					++scr[qInd];
+					scr[qInd] &= 1;
+				}
+				//printf("mem0="); lgz_print(mem[0]);
+				
+				if(lgz_eqo(mem[0]))
+				{
+					for(int32_t k=0; k<B; ++k)
+					{
+						A[k][count] = scr[k];
+					}
+					smooth_x[count] = x[j];
+					++count;
+					printf("yabo=%d\n", yabo);
+					printf("count=%d\n", count);
+					//getchar();
+					break;
+				}
+			}
+			//printf("\n");
+			//getchar();
+		}
+		++x[0];
+		--x[1];
 	}
 	
-	while(count < B)
+	/*printf("smooth x\n");
+	for(int i=0; i<col; ++i)
 	{
-		int64_t x1;
-		int64_t x2;
-		memset(init, 0, size);
-		for(int32_t i=B-1; i>=0; --i)
-		{
-			uint32_t prime = quadros[i].pr;
-			uint32_t sol1 = quadros[i].sol1;
-			uint32_t sol2 = quadros[i].sol2;
-			x1 = (index - (index%prime)) + sol1;
-			x2 = (index - (index%prime)) + sol2;
-			if(x1 < index)
-			{
-				x1 += prime;
-			}
-			if(x2 < index)
-			{
-				x2 += prime;
-			}
-
-			for(; x1<index+size; x1+=sol1)
-			{
-				int32_t j = x1%size;
-				if(init[j] == 0)
-				{
-					lgz_memset(set[j], 0);
-					qs_polyQ(set[j], x1, sqrtn, n);
-				}
-			}
-			if(prime != 2)
-			{
-				for(; x2<index+size; x2+=sol2)
-				{
-					int32_t j = x2%size;
-					if(init[j] == 0)
-					{
-						lgz_memset(set[j], 0);
-						qs_polyQ(set[j], x2, sqrtn, n);
-					}
-				}
-			}
-		}
-
-		index += size;
-	}
-
-
-	/*int64_t x = 0;
-	int64_t y = 0;
-	while(count < B)
-	{
-		lgz_memset(mem[0], 0);
-		lgz_memset(mem[1], 0);
-		qs_polyQ(mem[0], x, sqrtn, n);
-		qs_polyQ(mem[1], y, sqrtn, n);
-		
-		//printf("x=%lld\nmem[0]=", x); lgz_print(mem[0]);
-
-		if(qs_vec(scr, mem[0], x, B))
-		{
-			for(int i=0; i<B; ++i)
-			{
-				A[i][count] = scr[i];
-			}
-			sols[count] = x;
-			++count;
-		}
-		//getchar();
-
-		//printf("x=%lld\nmem[1]=", -1*x); lgz_print(mem[1]);
-		if(y != 0 && qs_vec(scr, mem[1], y, B))
-		{
-			for(int i=0; i<B; ++i)
-			{
-				A[i][count] = scr[i];
-			}
-			sols[count] = -1*x;
-			++count;
-		}
-		//getchar();
-		
-		++x;
-		--y;
-	}
-	printf("ok\nsols=\n");
-
-	for(int i=0; i<B; ++i)
-	{
-		printf("%lld, ", sols[i]);
+		printf("%lld, ", smooth_x[i]);
 	}
 	printf("\n");
 
 	for(int i=0; i<B; ++i)
 	{
-		for(int j=0; j<B; ++j)
+		for(int j=0; j<col; ++j)
 		{
 			printf("%d ", A[i][j]);
 		}
@@ -486,21 +434,36 @@ void qs_factor(lgz *n)
 	printf("\n");
 	
 	memset(scr, 0, B);
-	qs_rref(scr, A, B, B);
+	qs_rref(scr, A, B, col);
+
+	for(int i=0; i<B; ++i)
+	{
+		for(int j=0; j<col; ++j)
+		{
+			printf("%d ", A[i][j]);
+		}
+		printf("\n");
+	}
+	printf("\n");
+	for(int i=0; i<col; ++i)
+	{
+		printf("%d ", scr[i]);
+	}
+	printf("\n");
 	
 	lgz_enter(mem[0], 1);
 	lgz_set(mem[3], mem[0]);
-	for(int i=0; i<B; ++i)
+	for(int i=0; i<col; ++i)
 	{
 		if(scr[i])
 		{
 			lgz_memset(mem[1], 0);
 			lgz_memset(mem[0], 0);
-			qs_polyQ(mem[1], sols[i], sqrtn, n);
-			printf("mem1="); lgz_print(mem[1]);
-			printf("mem2="); lgz_print(mem[3]);
+			qs_polyQ(mem[1], smooth_x[i], sqrtn, n);
+			//printf("mem1="); lgz_print(mem[1]);
+			//printf("mem2="); lgz_print(mem[3]);
 			lgz_mul(mem[0], mem[3], mem[1]);
-			printf("mem0="); lgz_print(mem[0]);
+			//printf("mem0="); lgz_print(mem[0]);
 			lgz_set(mem[3], mem[0]);
 		}
 	}
@@ -509,7 +472,6 @@ void qs_factor(lgz *n)
 
 	lgz_free(sqrtn);
 	free(scr);
-	free(sols);
 	for(int64_t i=0; i<B; ++i)
 	{
 		free(A[i]);

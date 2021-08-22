@@ -778,7 +778,7 @@ void lgz_mul32(lgz *c, lgz *a, int32_t num)
 
 void lgz_div32(lgz_div_t *c, lgz *a, int32_t num)
 {
-	lgz_set(c->rem, a);	
+	lgz_set(c->rem, a);
 
 	int32_t mag = lgz_mag(c->rem);	
 	int32_t track = (mag/4)-1;
@@ -967,7 +967,7 @@ void lgz_sqrt(lgz *r, lgz *a)
 	int n = lgz_mag(a);
 	int m = ((n+1) >> 1)-1;	
 	
-	if(r->length <= m)
+	if(r->length <= ((n+1) >> 1))
 	{
 		lgz_resize(r, m+4);
 	}
@@ -987,10 +987,11 @@ void lgz_sqrt(lgz *r, lgz *a)
 		c = 1;
 		lgz_add(tmp1,rsq,esq); //tmp1 = r^2 + e^2
 		//printf("tmp1="); lgz_print(tmp1);
+		//printf("r="); lgz_print(r);
 		lgz_set(tmp2,r); //tmp2 = 2*e*r
 		lgz_lshift(tmp2,m);
 		lgz_mul32(tmp2,tmp2,2);
-		//printf("tmp2="); lgz_print(tmp1);
+		//printf("tmp2="); lgz_print(tmp2);
 		lgz_add(tmp1,tmp1,tmp2);//tmp1 = tmp1 + tmp2
 		//printf("tmp1="); lgz_print(tmp1);
 		if(lgz_leq(tmp1, a) != 0)
@@ -1003,6 +1004,7 @@ void lgz_sqrt(lgz *r, lgz *a)
 				lgz_set(prev_tmp1,tmp1);
 				lgz_mul32(tmp1,esq,c*c); //tmp1 = c^2*e^2
 				//printf("tmp1="); lgz_print(tmp1);
+				//printf("tmp2="); lgz_print(tmp2);
 				lgz_mul32(tmp3,tmp2,c); //tmp3 = tmp2*c = c*2*e*r
 				//printf("tmp3="); lgz_print(tmp3);
 				lgz_add(tmp1,tmp1,rsq);//tmp1 = tmp1+r^2 = c^2*e^2 + r^2
