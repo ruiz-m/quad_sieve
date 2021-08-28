@@ -735,6 +735,12 @@ void lgz_add32(lgz *c, lgz *a, int32_t num)
 		c_32[i] = sum;
 		carry = sum >> 32;
 	}
+	for(int i=(a->length/4); i<(c->length/4); ++i)
+	{
+		sum = c_32[i] + signa + carry;
+		c_32[i] = sum;
+		carry = sum >> 32;
+	}
 
 	if(c->length == a->length)
 	{

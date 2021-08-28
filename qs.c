@@ -4,7 +4,8 @@
 #include<stdint.h>
 #include<string.h>
 
-#include"./lgz.h"
+#include"lgz.h"
+#include"heap.h"
 
 #define MEM 4
 
@@ -17,6 +18,8 @@ typedef struct quad
 quad *quadros;
 lgz **mem;
 lgz_div_t *c;
+
+
 
 void add(int8_t *r1, int8_t *r2, int32_t size)
 {
@@ -288,25 +291,27 @@ void qs_factor(lgz *n)
 	float ex = exp(sqrt(ln_n*log(ln_n)));
 	uint32_t B = ceil(pow(ex, sqrt(2)/4.0));
 	uint64_t count = 0;
-	
+
+	lgz *a = new_lgz();
+	lgz *b = new_lgz();
 	lgz *sqrtn = new_lgz();
 	printf("compute square root\n");
 	lgz_sqrt(sqrtn, n);
 	printf("sqrtn=");lgz_print(sqrtn);
 
-	//uint32_t min = I64log2(I64log2(B));
 	uint32_t min = lgz_mag(sqrtn)+1;
-	uint32_t col = B+min-1;
+	uint32_t col = B+1;
 
 	int8_t *scr = (int8_t*)calloc(col, sizeof(int8_t));
+	uint32_t *queue = (uint32_t*)malloc(B*sizeof(uint32_t));
 	int64_t *smooth_x = (int64_t*)malloc(col*sizeof(int64_t));
-	uint32_t *queue = (uint32_t*)calloc(B, sizeof(uint32_t));
-	uint32_t *qIndex = (uint32_t*)calloc(B, sizeof(uint32_t));
 	int8_t **A = (int8_t**)malloc(B*sizeof(int8_t*));
 	for(int64_t i=0; i<B; ++i)
 	{
 		A[i] = (int8_t*)calloc(col,sizeof(int8_t));
 	}
+	heap *h1 = new_heap(2*B);
+	heap *h2 = new_heap(2*B);
 	
 	printf("B=%llu\n", B);
 	printf("col=%u\n", col);
@@ -339,52 +344,60 @@ void qs_factor(lgz *n)
 		}
 		quadros[i].sol[0] = sol1;
 		quadros[i].sol[1] = sol2;
+	
+		if(quadros[i].pr == 2)
+		{
+			hInsert(h1, sol1, i);
+			hInsert(h2, sol1-2, i);
+		}
+		else
+		{
+			hInsert(h1, sol1, i);
+			hInsert(h1, sol2, i);
+			hInsert(h2, sol1-(int64_t)quadros[i].pr, i);
+			hInsert(h2, sol2-(int64_t)quadros[i].pr, i);
+		}
 		//printf("%u, ", quadros[i].pr);
 	}
-	printf("\n");
-	
-	int64_t yabo = 0;
-	int64_t x[2] = {0, -1};
+	//printf("\n");
+	/*hPrint(h1);
+	hPrint(h2);
+	getchar();*/
+
 	while(count < col)
 	{
-		for(int8_t j=0; j<2; ++j)
+		uint32_t fc = 0;
+		int64_t x = peekX(h1);
+
+		//hPrint(h1);
+		while(peekX(h1) == x)
 		{
-			uint32_t factor_count = 0;
+			uint32_t qInd = peekQind(h1);
+			queue[fc] = qInd;
+			++fc;
+
+			hDelete(h1);
+			hInsert(h1, x+quadros[qInd].pr, qInd);
+		}
+		//printf("x=%lld\nfc=%u\n", x, fc);
+		//getchar();
+		if(fc >= min)
+		{
+			//printf("x=%lld\nfc=%u\n", x, fc);
+			//getchar();
 			memset(scr, 0, col);
-			memset(queue, 0, B*sizeof(uint32_t));
-			memset(qIndex, 0, B*sizeof(uint32_t));
-			for(int32_t i=0; i<B; ++i)
-			{
-				int64_t m = x[j]%quadros[i].pr;
-				if(m < 0)
-				{
-					m += quadros[i].pr;
-				}
-				if(m == quadros[i].sol[0] || m == quadros[i].sol[1])
-				{
-					queue[factor_count] = quadros[i].pr;
-					qIndex[factor_count] = i;
-					++factor_count;
-				}
-			}
-			//printf("factor_count=%d\n", factor_count);
-			if(factor_count < min)
-			{
-				continue;
-			}
 			lgz_memset(mem[0], 0);
-			qs_polyQ(mem[0], x[j], sqrtn, n);
-			++yabo;
-			/*printf("x=%lld\n", x[j]);
-			printf("calculate\nyabo=%d\nmem0=", yabo); lgz_print(mem[0]);*/
-			for(int32_t i=0; i<factor_count; ++i)
+			qs_polyQ(mem[0], x, sqrtn, n);
+			
+			for(uint32_t j=0; j<fc; ++j)
 			{
-				//printf("%d, ", queue[i]);
-				uint32_t qInd = qIndex[i];
+				uint32_t qInd = queue[j];
+				uint32_t p = quadros[queue[j]].pr;
+
 				while(!lgz_eqo(mem[0]))
 				{
 					lgz_memset(c->quot, 0);
-					lgz_div32(c, mem[0], queue[i]);
+					lgz_div32(c, mem[0], p);
 					if(!lgz_eqz(c->rem))
 					{
 						break;
@@ -393,37 +406,91 @@ void qs_factor(lgz *n)
 					++scr[qInd];
 					scr[qInd] &= 1;
 				}
-				//printf("mem0="); lgz_print(mem[0]);
-				
 				if(lgz_eqo(mem[0]))
 				{
 					for(int32_t k=0; k<B; ++k)
 					{
 						A[k][count] = scr[k];
 					}
-					smooth_x[count] = x[j];
+					smooth_x[count] = x;
 					++count;
-					printf("yabo=%d\n", yabo);
-					printf("count=%d\n", count);
-					//getchar();
-					break;
+					if(count%0x10 == 0)
+					{
+						printf("count=%u\n", count);
+					}
+					if(count == col)
+					{
+						goto end;
+					}
 				}
 			}
-			//printf("\n");
-			//getchar();
 		}
-		++x[0];
-		--x[1];
+
+		fc = 0;
+		x = peekX(h2);
+		//hPrint(h2);
+		while(peekX(h2) == x)
+		{
+			uint32_t qInd = peekQind(h2);
+			queue[fc] = qInd;
+			++fc;
+
+			hDelete(h2);
+			hInsert(h2, x-quadros[qInd].pr, qInd);
+		}
+		//printf("x=%lld\nfc=%u\n", x, fc);
+		//getchar();
+		if(fc >= min)
+		{
+			//printf("x=%lld\nfc=%u\n", x, fc);
+			//getchar();
+			memset(scr, 0, col);
+			lgz_memset(mem[0], 0);
+			qs_polyQ(mem[0], x, sqrtn, n);
+
+			for(uint32_t j=0; j<fc; ++j)
+			{
+				uint32_t qInd = queue[j];
+				uint32_t p = quadros[queue[j]].pr;
+
+				while(!lgz_eqo(mem[0]))
+				{
+					lgz_memset(c->quot, 0);
+					lgz_div32(c, mem[0], p);
+					if(!lgz_eqz(c->rem))
+					{
+						break;
+					}
+					lgz_set(mem[0], c->quot);
+					++scr[qInd];
+					scr[qInd] &= 1;
+				}
+				if(lgz_eqo(mem[0]))
+				{
+					for(int32_t k=0; k<B; ++k)
+					{
+						A[k][count] = scr[k];
+					}
+					smooth_x[count] = x;
+					++count;
+					if(count%0x10 == 0)
+					{
+						printf("count=%u\n", count);
+					}
+				}
+			}
+		}
 	}
+	end:
 	
 	/*printf("smooth x\n");
 	for(int i=0; i<col; ++i)
 	{
 		printf("%lld, ", smooth_x[i]);
 	}
-	printf("\n");
+	printf("\n");*/
 
-	for(int i=0; i<B; ++i)
+	/*for(int i=0; i<B; ++i)
 	{
 		for(int j=0; j<col; ++j)
 		{
@@ -431,12 +498,12 @@ void qs_factor(lgz *n)
 		}
 		printf("\n");
 	}
-	printf("\n");
+	printf("\n");*/
 	
 	memset(scr, 0, B);
 	qs_rref(scr, A, B, col);
 
-	for(int i=0; i<B; ++i)
+	/*for(int i=0; i<B; ++i)
 	{
 		for(int j=0; j<col; ++j)
 		{
@@ -444,15 +511,14 @@ void qs_factor(lgz *n)
 		}
 		printf("\n");
 	}
-	printf("\n");
-	for(int i=0; i<col; ++i)
+	printf("\n");*/
+	/*for(int i=0; i<col; ++i)
 	{
 		printf("%d ", scr[i]);
 	}
-	printf("\n");
+	printf("\n");*/
 	
-	lgz_enter(mem[0], 1);
-	lgz_set(mem[3], mem[0]);
+	lgz_enter(mem[3], 1);
 	for(int i=0; i<col; ++i)
 	{
 		if(scr[i])
@@ -460,18 +526,45 @@ void qs_factor(lgz *n)
 			lgz_memset(mem[1], 0);
 			lgz_memset(mem[0], 0);
 			qs_polyQ(mem[1], smooth_x[i], sqrtn, n);
-			//printf("mem1="); lgz_print(mem[1]);
-			//printf("mem2="); lgz_print(mem[3]);
 			lgz_mul(mem[0], mem[3], mem[1]);
-			//printf("mem0="); lgz_print(mem[0]);
 			lgz_set(mem[3], mem[0]);
 		}
 	}
-	printf("\n");
-	lgz_print(mem[0]);*/
+	lgz_sqrt(a, mem[0]);
+	printf("\na=");
+	lgz_print(a);
+
+	lgz_enter(mem[3], 1);	
+	for(int i=0; i<col; ++i)
+	{
+		if(scr[i])
+		{
+			lgz_memset(mem[0], 0);
+			lgz_memset(mem[1], 0);
+			lgz_add32(mem[0], sqrtn, smooth_x[i]);
+			if(lgz_sign(mem[0]) == 255)
+			{
+				lgz_mul32(mem[0], mem[0], -1);
+			}
+			lgz_mul(mem[1], mem[3], mem[0]);
+			lgz_set(mem[3], mem[1]);
+		}
+	}
+	lgz_set(b, mem[3]);
+	printf("b="); lgz_print(b);
+
+	lgz_memset(mem[0], 0);
+	lgz_add(mem[0], a, b);
+	lgz_gcd(mem[1], mem[0], n);
+	printf("gcd="); lgz_print(mem[1]);
 
 	lgz_free(sqrtn);
+	lgz_free(a);
+	lgz_free(b);
 	free(scr);
+	hFree(h1);
+	hFree(h2);
+	free(smooth_x);
 	for(int64_t i=0; i<B; ++i)
 	{
 		free(A[i]);
